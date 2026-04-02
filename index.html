@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <title>ConvertPro — Universal Converter & Calculator</title>
+  <meta name="theme-color" content="#0f172a"/>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Inter',sans-serif;background:#0f172a;color:#e2e8f0;-webkit-tap-highlight-color:transparent}
+    .mono{font-family:'JetBrains Mono',monospace}
+    ::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+    @keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes copied{0%{transform:scale(1)}50%{transform:scale(1.15)}100%{transform:scale(1)}}
+    @keyframes splashIn{0%{opacity:0;transform:scale(0.6)}60%{opacity:1;transform:scale(1.05)}100%{transform:scale(1)}}
+    @keyframes splashOut{to{opacity:0;transform:scale(1.1)}}
+    .fade-in{animation:fadeIn 0.3s ease-out}
+    .slide-up{animation:slideUp 0.35s ease-out}
+    .glass{background:rgba(30,41,59,0.6);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.06)}
+    .glass-light{background:rgba(255,255,255,0.85);backdrop-filter:blur(12px);border:1px solid rgba(0,0,0,0.06)}
+    input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+    input[type=number]{-moz-appearance:textfield}
+    select{-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef,useMemo,useCallback}=React;
+
+/* ═══ DATA ═══ */
+const WEIGHT={
+  'Metric Ton':1000,'Kilogram':1,'Gram':0.001,'Milligram':0.000001,
+  'Pound':0.453592,'Ounce':0.0283495,'Stone':6.35029
+};
+const DISTANCE={
+  'Kilometer':1000,'Meter':1,'Centimeter':0.01,'Millimeter':0.001,
+  'Mile':1609.344,'Yard':0.9144,'Foot':0.3048,'Inch':0.0254
+};
+const VOLUME={
+  'Cup (US)':236.588,'Tablespoon':14.787,'Teaspoon':4.929,
+  'Milliliter':1,'Liter':1000,'Fluid Ounce (US)':29.574,'Gallon (US)':3785.41
+};
+const COOKING_DENSITY={
+  'All-Purpose Flour':{cup:120,tbsp:7.5,tsp:2.5},
+  'Granulated Sugar':{cup:200,tbsp:12.5,tsp:4.2},
+  'Brown Sugar (packed)':{cup:220,tbsp:13.75,tsp:4.6},
+  'Butter':{cup:227,tbsp:14.2,tsp:4.7},
+  'Milk':{cup:244,tbsp:15.25,tsp:5.1},
+  'Honey':{cup:340,tbsp:21.25,tsp:7.1},
+  'Rice (uncooked)':{cup:185,tbsp:11.6,tsp:3.9},
+  'Olive Oil':{cup:216,tbsp:13.5,tsp:4.5},
+  'Cocoa Powder':{cup:86,tbsp:5.4,tsp:1.8},
+  'Salt (table)':{cup:288,tbsp:18,tsp:6},
+  'Baking Powder':{cup:230,tbsp:14.4,tsp:4.8},
+  'Oats':{cup:90,tbsp:5.6,tsp:1.9}
+};
+
+// 50+ currencies with fallback rates (USD base)
+const CURRENCIES={
+  USD:{name:'US Dollar',symbol:'$',rate:1},EUR:{name:'Euro',symbol:'€',rate:0.92},GBP:{name:'British Pound',symbol:'£',rate:0.79},
+  JPY:{name:'Japanese Yen',symbol:'¥',rate:149.5},CHF:{name:'Swiss Franc',symbol:'Fr',rate:0.88},CAD:{name:'Canadian Dollar',symbol:'CA$',rate:1.36},
+  AUD:{name:'Australian Dollar',symbol:'A$',rate:1.53},CNY:{name:'Chinese Yuan',symbol:'¥',rate:7.24},INR:{name:'Indian Rupee',symbol:'₹',rate:83.1},
+  BRL:{name:'Brazilian Real',symbol:'R$',rate:4.97},KRW:{name:'South Korean Won',symbol:'₩',rate:1320},MXN:{name:'Mexican Peso',symbol:'$',rate:17.1},
+  SGD:{name:'Singapore Dollar',symbol:'S$',rate:1.34},HKD:{name:'Hong Kong Dollar',symbol:'HK$',rate:7.82},NOK:{name:'Norwegian Krone',symbol:'kr',rate:10.6},
+  SEK:{name:'Swedish Krona',symbol:'kr',rate:10.4},DKK:{name:'Danish Krone',symbol:'kr',rate:6.87},NZD:{name:'New Zealand Dollar',symbol:'NZ$',rate:1.63},
+  ZAR:{name:'South African Rand',symbol:'R',rate:18.6},RUB:{name:'Russian Ruble',symbol:'₽',rate:91.5},TRY:{name:'Turkish Lira',symbol:'₺',rate:28.9},
+  PLN:{name:'Polish Zloty',symbol:'zł',rate:4.02},THB:{name:'Thai Baht',symbol:'฿',rate:35.1},IDR:{name:'Indonesian Rupiah',symbol:'Rp',rate:15450},
+  HUF:{name:'Hungarian Forint',symbol:'Ft',rate:355},CZK:{name:'Czech Koruna',symbol:'Kč',rate:22.8},ILS:{name:'Israeli Shekel',symbol:'₪',rate:3.67},
+  CLP:{name:'Chilean Peso',symbol:'$',rate:878},PHP:{name:'Philippine Peso',symbol:'₱',rate:55.8},AED:{name:'UAE Dirham',symbol:'د.إ',rate:3.67},
+  COP:{name:'Colombian Peso',symbol:'$',rate:3950},SAR:{name:'Saudi Riyal',symbol:'﷼',rate:3.75},MYR:{name:'Malaysian Ringgit',symbol:'RM',rate:4.67},
+  RON:{name:'Romanian Leu',symbol:'lei',rate:4.57},BGN:{name:'Bulgarian Lev',symbol:'лв',rate:1.80},HRK:{name:'Croatian Kuna',symbol:'kn',rate:6.93},
+  PEN:{name:'Peruvian Sol',symbol:'S/',rate:3.72},UAH:{name:'Ukrainian Hryvnia',symbol:'₴',rate:37.1},EGP:{name:'Egyptian Pound',symbol:'E£',rate:30.9},
+  NGN:{name:'Nigerian Naira',symbol:'₦',rate:780},PKR:{name:'Pakistani Rupee',symbol:'₨',rate:279},BDT:{name:'Bangladeshi Taka',symbol:'৳',rate:110},
+  VND:{name:'Vietnamese Dong',symbol:'₫',rate:24300},ARS:{name:'Argentine Peso',symbol:'$',rate:350},TWD:{name:'Taiwan Dollar',symbol:'NT$',rate:31.5},
+  KWD:{name:'Kuwaiti Dinar',symbol:'د.ك',rate:0.307},QAR:{name:'Qatari Riyal',symbol:'﷼',rate:3.64},BAM:{name:'Bosnia Mark',symbol:'KM',rate:1.80},
+  RSD:{name:'Serbian Dinar',symbol:'din',rate:108},GEL:{name:'Georgian Lari',symbol:'₾',rate:2.67},ISK:{name:'Icelandic Krona',symbol:'kr',rate:137},
+  KES:{name:'Kenyan Shilling',symbol:'KSh',rate:153},LKR:{name:'Sri Lankan Rupee',symbol:'Rs',rate:325}
+};
+
+/* ═══ HELPERS ═══ */
+function playClick(){try{const c=new(window.AudioContext||window.webkitAudioContext)();const o=c.createOscillator();const g=c.createGain();o.type='sine';o.frequency.value=600;g.gain.setValueAtTime(0.08,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+0.08);o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+0.08);}catch(e){}}
+
+function copyToClipboard(text,setCopied){
+  navigator.clipboard.writeText(text).then(()=>{setCopied(true);playClick();setTimeout(()=>setCopied(false),1500);}).catch(()=>{});
+}
+
+/* ═══ SPLASH ═══ */
+function Splash({onDone}){
+  const [f,setF]=useState(false);
+  useEffect(()=>{const t1=setTimeout(()=>setF(true),1800);const t2=setTimeout(onDone,2300);return()=>{clearTimeout(t1);clearTimeout(t2);};},[]);
+  return(
+    <div style={{position:'fixed',inset:0,zIndex:9999,background:'linear-gradient(135deg,#0f172a,#1e293b)',
+      display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+      animation:f?'splashOut 0.5s ease-in forwards':'none'}}>
+      <div style={{fontSize:64,opacity:0,animation:'splashIn 0.8s ease-out 0.2s forwards'}}>⚡</div>
+      <div style={{fontWeight:900,fontSize:32,color:'#fff',letterSpacing:2,marginTop:12,opacity:0,
+        animation:'fadeIn 0.6s ease-out 0.6s forwards'}}>ConvertPro</div>
+      <div style={{fontSize:11,color:'rgba(255,255,255,0.3)',letterSpacing:4,marginTop:6,opacity:0,
+        animation:'fadeIn 0.4s ease-out 1s forwards'}}>UNIVERSAL CONVERTER</div>
+    </div>
+  );
+}
+
+/* ═══ TABS ═══ */
+const TABS=[
+  {key:'calc',label:'Calculator',icon:'🧮'},
+  {key:'currency',label:'Currency',icon:'💱'},
+  {key:'weight',label:'Weight',icon:'⚖️'},
+  {key:'distance',label:'Distance',icon:'📏'},
+  {key:'temp',label:'Temp',icon:'🌡️'},
+  {key:'cooking',label:'Cooking',icon:'🍳'}
+];
+
+/* ═══ CALCULATOR ═══ */
+function Calculator({dark}){
+  const [display,setDisplay]=useState('0');
+  const [history,setHistory]=useState(()=>{try{return JSON.parse(localStorage.getItem('calc_history'))||[];}catch(e){return[];}});
+  const [mem,setMem]=useState(0);
+
+  useEffect(()=>{localStorage.setItem('calc_history',JSON.stringify(history.slice(-20)));},[history]);
+
+  const input=(v)=>{playClick();setDisplay(d=>d==='0'||d==='Error'?v:d+v);};
+  const clear=()=>{playClick();setDisplay('0');};
+  const backspace=()=>{playClick();setDisplay(d=>d.length<=1?'0':d.slice(0,-1));};
+  const calculate=()=>{
+    playClick();
+    try{
+      let expr=display.replace(/×/g,'*').replace(/÷/g,'/').replace(/π/g,'Math.PI').replace(/e(?![x])/g,'Math.E');
+      expr=expr.replace(/sin\(/g,'Math.sin(').replace(/cos\(/g,'Math.cos(').replace(/tan\(/g,'Math.tan(');
+      expr=expr.replace(/log\(/g,'Math.log10(').replace(/ln\(/g,'Math.log(').replace(/√\(/g,'Math.sqrt(');
+      expr=expr.replace(/\^/g,'**');
+      const result=Function('"use strict";return('+expr+')')();
+      if(isNaN(result)||!isFinite(result)){setDisplay('Error');return;}
+      const res=parseFloat(result.toPrecision(12)).toString();
+      setHistory(h=>[{expr:display,result:res},...h].slice(0,20));
+      setDisplay(res);
+    }catch(e){setDisplay('Error');}
+  };
+
+  const bg=dark?'rgba(30,41,59,0.7)':'rgba(255,255,255,0.9)';
+  const btnBg=dark?'rgba(51,65,85,0.6)':'rgba(241,245,249,0.9)';
+  const btnOp=dark?'rgba(59,130,246,0.2)':'rgba(59,130,246,0.1)';
+  const txt=dark?'#e2e8f0':'#1e293b';
+  const dim=dark?'rgba(255,255,255,0.4)':'rgba(0,0,0,0.4)';
+
+  const Btn=({v,display:d,onClick,span=1,bg:b,color:c})=>(
+    <button onClick={onClick||(() =>input(d||v))} style={{
+      gridColumn:`span ${span}`,padding:'14px 0',borderRadius:12,border:'none',cursor:'pointer',
+      background:b||btnBg,color:c||txt,fontSize:18,fontWeight:600,fontFamily:'Inter',
+      transition:'transform 0.1s',backdropFilter:'blur(8px)'
+    }} onMouseDown={e=>e.currentTarget.style.transform='scale(0.93)'}
+       onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}>{v}</button>
+  );
+
+  return(
+    <div className="slide-up" style={{maxWidth:400,margin:'0 auto'}}>
+      {/* Display */}
+      <div style={{background:bg,borderRadius:20,padding:'16px 20px',marginBottom:12,backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.06)'}}>
+        <div className="mono" style={{fontSize:13,color:dim,textAlign:'right',minHeight:18,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+          {display!=='0'&&display!=='Error'?'':'​'}
+        </div>
+        <div className="mono" style={{fontSize:36,fontWeight:700,color:txt,textAlign:'right',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1.2}}>
+          {display}
+        </div>
+      </div>
+
+      {/* Scientific row */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:6,marginBottom:6}}>
+        {['sin(','cos(','tan(','log(','ln(','√('].map(v=>
+          <Btn key={v} v={v.replace('(','​')} display={v} bg={btnOp} color="#3b82f6"/>
+        )}
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:6,marginBottom:8}}>
+        {['π','e','^','(',')','%'].map(v=>
+          <Btn key={v} v={v} bg={btnOp} color="#3b82f6"/>
+        )}
+      </div>
+
+      {/* Main grid */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
+        <Btn v="C" onClick={clear} bg="rgba(239,68,68,0.15)" color="#ef4444"/>
+        <Btn v="⌫" onClick={backspace} bg="rgba(239,68,68,0.1)" color="#f87171"/>
+        <Btn v="÷"/>
+        <Btn v="×"/>
+        {['7','8','9','-','4','5','6','+','1','2','3'].map(v=>
+          <Btn key={v} v={v} bg={['+','-'].includes(v)?btnOp:undefined} color={['+','-'].includes(v)?'#3b82f6':undefined}/>
+        )}
+        <Btn v="=" onClick={calculate} bg="linear-gradient(135deg,#3b82f6,#2563eb)" color="#fff"/>
+        <Btn v="0" span={2}/>
+        <Btn v="."/>
+      </div>
+
+      {/* History */}
+      {history.length>0&&(
+        <div style={{marginTop:16,background:bg,borderRadius:16,padding:14,backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.06)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+            <span style={{fontSize:12,fontWeight:700,color:dim}}>History</span>
+            <button onClick={()=>setHistory([])} style={{fontSize:10,color:'#ef4444',background:'none',border:'none',cursor:'pointer',fontFamily:'Inter'}}>Clear</button>
+          </div>
+          <div style={{maxHeight:150,overflowY:'auto'}}>
+            {history.slice(0,8).map((h,i)=>(
+              <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'4px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>
+                <span className="mono" style={{color:dim,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1,marginRight:8}}>{h.expr}</span>
+                <span className="mono" style={{fontWeight:600,color:txt,cursor:'pointer'}} onClick={()=>{setDisplay(h.result);playClick();}}>= {h.result}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══ GENERIC UNIT CONVERTER ═══ */
+function UnitConverter({title,units,dark,addToRecent}){
+  const keys=Object.keys(units);
+  const [from,setFrom]=useState(keys[0]);
+  const [to,setTo]=useState(keys[1]);
+  const [val,setVal]=useState('');
+  const [copied,setCopied]=useState(false);
+
+  const result=useMemo(()=>{
+    if(!val||isNaN(val))return '';
+    const base=parseFloat(val)*units[from];
+    return parseFloat((base/units[to]).toPrecision(10)).toString();
+  },[val,from,to]);
+
+  useEffect(()=>{
+    if(result&&val){addToRecent({type:title,from:`${val} ${from}`,to:`${result} ${to}`});}
+  },[result]);
+
+  const swap=()=>{playClick();setFrom(to);setTo(from);};
+
+  const bg=dark?'rgba(30,41,59,0.6)':'rgba(255,255,255,0.9)';
+  const txt=dark?'#e2e8f0':'#1e293b';
+  const dim=dark?'rgba(255,255,255,0.4)':'rgba(0,0,0,0.4)';
+  const inputBg=dark?'rgba(15,23,42,0.6)':'rgba(241,245,249,0.9)';
+  const selBg=dark?'rgba(51,65,85,0.8)':'#f1f5f9';
+
+  return(
+    <div className="slide-up" style={{maxWidth:440,margin:'0 auto'}}>
+      <div style={{background:bg,borderRadius:20,padding:20,backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.06)'}}>
+        {/* From */}
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:10,fontWeight:700,color:dim,letterSpacing:1,display:'block',marginBottom:6}}>FROM</label>
+          <select value={from} onChange={e=>{setFrom(e.target.value);playClick();}}
+            style={{width:'100%',padding:'10px 30px 10px 12px',borderRadius:10,border:'1px solid rgba(255,255,255,0.08)',background:selBg,color:txt,fontSize:14,fontWeight:600,fontFamily:'Inter',cursor:'pointer',marginBottom:8}}>
+            {keys.map(k=><option key={k} value={k}>{k}</option>)}
+          </select>
+          <input type="number" value={val} onChange={e=>setVal(e.target.value)} placeholder="Enter value"
+            style={{width:'100%',padding:'14px 16px',borderRadius:12,border:'1px solid rgba(255,255,255,0.08)',background:inputBg,color:txt,fontSize:24,fontWeight:700,fontFamily:'JetBrains Mono',outline:'none'}}
+            autoFocus/>
+        </div>
+
+        {/* Swap */}
+        <div style={{textAlign:'center',margin:'4px 0'}}>
+          <button onClick={swap} style={{width:40,height:40,borderRadius:12,border:'none',cursor:'pointer',
+            background:'linear-gradient(135deg,#3b82f6,#2563eb)',color:'#fff',fontSize:18,
+            display:'inline-flex',alignItems:'center',justifyContent:'center',transition:'transform 0.15s'}}
+            onMouseDown={e=>e.currentTarget.style.transform='scale(0.9) rotate(180deg)'}
+            onMouseUp={e=>e.currentTarget.style.transform='scale(1) rotate(0deg)'}>⇅</button>
+        </div>
+
+        {/* To */}
+        <div style={{marginTop:8}}>
+          <label style={{fontSize:10,fontWeight:700,color:dim,letterSpacing:1,display:'block',marginBottom:6}}>TO</label>
+          <select value={to} onChange={e=>{setTo(e.target.value);playClick();}}
+            style={{width:'100%',padding:'10px 30px 10px 12px',borderRadius:10,border:'1px solid rgba(255,255,255,0.08)',background:selBg,color:txt,fontSize:14,fontWeight:600,fontFamily:'Inter',cursor:'pointer',marginBottom:8}}>
+            {keys.map(k=><option key={k} value={k}>{k}</option>)}
+          </select>
+          <div style={{position:'relative'}}>
+            <div className="mono" style={{width:'100%',padding:'14px 50px 14px 16px',borderRadius:12,
+              background:result?'rgba(59,130,246,0.08)':inputBg,
+              border:`1px solid ${result?'rgba(59,130,246,0.2)':'rgba(255,255,255,0.08)'}`,
+              color:result?'#3b82f6':dim,fontSize:24,fontWeight:700,minHeight:56,
+              transition:'all 0.3s'}}>
+              {result||'—'}
+            </div>
+            {result&&(
+              <button onClick={()=>copyToClipboard(result,setCopied)} style={{
+                position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',
+                width:32,height:32,borderRadius:8,border:'none',cursor:'pointer',
+                background:copied?'#22c55e':'rgba(59,130,246,0.15)',color:copied?'#fff':'#3b82f6',
+                fontSize:14,display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.2s',
+                animation:copied?'copied 0.3s ease-out':'none'
+              }}>{copied?'✓':'📋'}</button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ CURRENCY CONVERTER ═══ */
+function CurrencyConverter({dark,addToRecent}){
+  const [rates,setRates]=useState(()=>{
+    try{const c=JSON.parse(localStorage.getItem('fx_rates'));if(c&&Date.now()-c.ts<86400000)return c.rates;}catch(e){}
+    return null;
+  });
+  const [from,setFrom]=useState('USD');
+  const [to,setTo]=useState('EUR');
+  const [val,setVal]=useState('');
+  const [copied,setCopied]=useState(false);
+
+  // Try fetch rates
+  useEffect(()=>{
+    if(rates)return;
+    fetch('https://open.er-api.com/v6/latest/USD').then(r=>r.json()).then(d=>{
+      if(d.rates){
+        localStorage.setItem('fx_rates',JSON.stringify({ts:Date.now(),rates:d.rates}));
+        setRates(d.rates);
+      }
+    }).catch(()=>{});
+  },[]);
+
+  const getRate=(code)=>{
+    if(rates&&rates[code])return rates[code];
+    return CURRENCIES[code]?.rate||1;
+  };
+
+  const result=useMemo(()=>{
+    if(!val||isNaN(val))return '';
+    const inUSD=parseFloat(val)/getRate(from);
+    const out=inUSD*getRate(to);
+    return out.toFixed(2);
+  },[val,from,to,rates]);
+
+  useEffect(()=>{if(result&&val)addToRecent({type:'Currency',from:`${val} ${from}`,to:`${result} ${to}`});},[result]);
+
+  const swap=()=>{playClick();setFrom(to);setTo(from);};
+  const codes=Object.keys(CURRENCIES).sort();
+  const bg=dark?'rgba(30,41,59,0.6)':'rgba(255,255,255,0.9)';
+  const txt=dark?'#e2e8f0':'#1e293b';
+  const dim=dark?'rgba(255,255,255,0.4)':'rgba(0,0,0,0.4)';
+  const inputBg=dark?'rgba(15,23,42,0.6)':'rgba(241,245,249,0.9)';
+  const selBg=dark?'rgba(51,65,85,0.8)':'#f1f5f9';
+
+  return(
+    <div className="slide-up" style={{maxWidth:440,margin:'0 auto'}}>
+      <div style={{background:bg,borderRadius:20,padding:20,backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.06)'}}>
+        {!rates&&<div style={{fontSize:10,color:'#f59e0b',textAlign:'center',marginBottom:8}}>⚠️ Using offline rates — connect for live data</div>}
+
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:10,fontWeight:700,color:dim,letterSpacing:1,display:'block',marginBottom:6}}>FROM</label>
+          <select value={from} onChange={e=>{setFrom(e.target.value);playClick();}}
+            style={{width:'100%',padding:'10px 30px 10px 12px',borderRadius:10,border:'1px solid rgba(255,255,255,0.08)',background:selBg,color:txt,fontSize:13,fontWeight:600,fontFamily:'Inter',cursor:'pointer',marginBottom:8}}>
+            {codes.map(c=><option key={c} value={c}>{CURRENCIES[c].symbol} {c} — {CURRENCIES[c].name}</option>)}
+          </select>
+          <input type="number" value={val} onChange={e=>setVal(e.target.value)} placeholder="Amount"
+            style={{width:'100%',padding:'14px 16px',borderRadius:12,border:'1px solid rgba(255,255,255,0.08)',background:inputBg,color:txt,fontSize:24,fontWeight:700,fontFamily:'JetBrains Mono',outline:'none'}}/>
+        </div>
+
+        <div style={{textAlign:'center',margin:'4px 0'}}>
+          <button onClick={swap} style={{width:40,height:40,borderRadius:12,border:'none',cursor:'pointer',
+            background:'linear-gradient(135deg,#3b82f6,#2563eb)',color:'#fff',fontSize:18,
+            display:'inline-flex',alignItems:'center',justifyContent:'center'}}
+            onMouseDown={e=>e.currentTarget.style.transform='scale(0.9) rotate(180deg)'}
+            onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}>⇅</button>
+        </div>
+
+        <div style={{marginTop:8}}>
+          <label style={{fontSize:10,fontWeight:700,color:dim,letterSpacing:1,display:'block',marginBottom:6}}>TO</label>
+          <select value={to} onChange={e=>{setTo(e.target.value);playClick();}}
+            style={{width:'100%',padding:'10px 30px 10px 12px',borderRadius:10,border:'1px solid rgba(255,255,255,0.08)',background:selBg,color:txt,fontSize:13,fontWeight:600,fontFamily:'Inter',cursor:'pointer',marginBottom:8}}>
+            {codes.map(c=><option key={c} value={c}>{CURRENCIES[c].symbol} {c} — {CURRENCIES[c].name}</option>)}
+          </select>
+          <div style={{position:'relative'}}>
+            <div className="mono" style={{padding:'14px 50px 14px 16px',borderRadius:12,
+              background:result?'rgba(59,130,246,0.08)':inputBg,
+              border:`1px solid ${result?'rgba(59,130,246,0.2)':'rgba(255,255,255,0.08)'}`,
+              color:result?'#3b82f6':dim,fontSize:24,fontWeight:700,minHeight:56}}>
+              {result?`${CURRENCIES[to].symbol} ${parseFloat(result).toLocaleString('en',{minimumFractionDigits:2})}`:'—'}
+            </div>
+            {result&&(
+              <button onClick={()=>copyToClipboard(result,setCopied)} style={{
+                position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',
+                width:32,height:32,borderRadius:8,border:'none',cursor:'pointer',
+                background:copied?'#22c55e':'rgba(59,130,246,0.15)',color:copied?'#fff':'#3b82f6',
+                fontSize:14,display:'flex',alignItems:'center',justifyContent:'center',
+                animation:copied?'copied 0.3s ease-out':'none'
+              }}>{copied?'✓':'📋'}</button>
+            )}
+          </div>
+        </div>
+
+        {val&&result&&<div style={{marginTop:12,textAlign:'center',fontSize:11,color:dim}}>
+          1 {from} = {(getRate(to)/getRate(from)).toFixed(4)} {to}
+        </div>}
+      </div>
+    </div>
+  );
+}
+
+/* ═══ TEMPERATURE ═══ */
+function TempConverter({dark,addToRecent}){
+  const units=['Celsius','Fahrenheit','Kelvin'];
+  const [from,setFrom]=useState('Celsius');
+  const [to,setTo]=useState('Fahrenheit');
+  const [val,setVal]=useState('');
+  const [copied,setCopied]=useState(false);
+
+  const convert=(v,f,t)=>{
+    const n=parseFloat(v);if(isNaN(n))return '';
+    let c=f==='Celsius'?n:f==='Fahrenheit'?(n-32)*5/9:n-273.15;
+    let r=t==='Celsius'?c:t==='Fahrenheit'?c*9/5+32:c+273.15;
+    return parseFloat(r.toFixed(4)).toString();
+  };
+
+  const result=convert(val,from,to);
+  useEffect(()=>{if(result&&val)addToRecent({type:'Temp',from:`${val}° ${from}`,to:`${result}° ${to}`});},[result]);
+
+  const swap=()=>{playClick();setFrom(to);setTo(from);};
+  const bg=dark?'rgba(30,41,59,0.6)':'rgba(255,255,255,0.9)';
+  const txt=dark?'#e2e8f0':'#1e293b';
+  const dim=dark?'rgba(255,255,255,0.4)':'rgba(0,0,0,0.4)';
+  const inputBg=dark?'rgba(15,23,42,0.6)':'rgba(241,245,249,0.9)';
+  const selBg=dark?'rgba(51,65,85,0.8)':'#f1f5f9';
+
+  return(
+    <div className="slide-up" style={{maxWidth:440,margin:'0 auto'}}>
+      <div style={{background:bg,borderRadius:20,padding:20,backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.06)'}}>
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:10,fontWeight:700,color:dim,letterSpacing:1,display:'block',marginBottom:6}}>FROM</label>
+          <div style={{display:'flex',gap:6,marginBottom:8}}>
+            {units.map(u=>(
+              <button key={u} onClick={()=>{setFrom(u);playClick();}} style={{flex:1,padding:'10px 0',borderRadius:10,border:'none',cursor:'pointer',
+                background:from===u?'linear-gradient(135deg,#3b82f6,#2563eb)':'transparent',
+                border:from===u?'none':`1px solid ${dark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.08)'}`,
+                color:from===u?'#fff':txt,fontSize:12,fontWeight:600,fontFamily:'Inter'}}>{u}</button>
+            ))}
+          </div>
+          <input type="number" value={val} onChange={e=>setVal(e.target.value)} placeholder="Enter temperature"
+            style={{width:'100%',padding:'14px 16px',borderRadius:12,border:'1px solid rgba(255,255,255,0.08)',background:inputBg,color:txt,fontSize:24,fontWeight:700,fontFamily:'JetBrains Mono',outline:'none'}}/>
+        </div>
+        <div style={{textAlign:'center',margin:'4px 0'}}>
+          <button onClick={swap} style={{width:40,height:40,borderRadius:12,border:'none',cursor:'pointer',background:'linear-gradient(135deg,#3b82f6,#2563eb)',color:'#fff',fontSize:18,display:'inline-flex',alignItems:'center',justifyContent:'center'}}>⇅</button>
+        </div>
+        <div style={{marginTop:8}}>
+          <label style={{fontSize:10,fontWeight:700,color:dim,letterSpacing:1,display:'block',marginBottom:6}}>TO</label>
+          <div style={{display:'flex',gap:6,marginBottom:8}}>
+            {units.map(u=>(
+              <button key={u} onClick={()=>{setTo(u);playClick();}} style={{flex:1,padding:'10px 0',borderRadius:10,border:'none',cursor:'pointer',
+                background:to===u?'linear-gradient(135deg,#3b82f6,#2563eb)':'transparent',
+                border:to===u?'none':`1px solid ${dark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.08)'}`,
+                color:to===u?'#fff':txt,fontSize:12,fontWeight:600,fontFamily:'Inter'}}>{u}</button>
+            ))}
+          </div>
+          <div style={{position:'relative'}}>
+            <div className="mono" style={{padding:'14px 50px 14px 16px',borderRadius:12,background:result?'rgba(59,130,246,0.08)':inputBg,
+              border:`1px solid ${result?'rgba(59,130,246,0.2)':'rgba(255,255,255,0.08)'}`,color:result?'#3b82f6':dim,fontSize:24,fontWeight:700,minHeight:56}}>
+              {result?result+'°':'—'}
+            </div>
+            {result&&<button onClick={()=>copyToClipboard(result,setCopied)} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',width:32,height:32,borderRadius:8,border:'none',cursor:'pointer',background:copied?'#22c55e':'rgba(59,130,246,0.15)',color:copied?'#fff':'#3b82f6',fontSize:14,display:'flex',alignItems:'center',justifyContent:'center'}}>{copied?'✓':'📋'}</button>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ COOKING CONVERTER ═══ */
+function CookingConverter({dark,addToRecent}){
+  const [ingredient,setIngredient]=useState(Object.keys(COOKING_DENSITY)[0]);
+  const [fromUnit,setFromUnit]=useState('Cup (US)');
+  const [toUnit,setToUnit]=useState('Gram');
+  const [val,setVal]=useState('');
+  const volumeUnits=Object.keys(VOLUME);
+
+  const result=useMemo(()=>{
+    if(!val||isNaN(val))return '';
+    const n=parseFloat(val);
+    // Convert from -> ml
+    const ml=n*(VOLUME[fromUnit]||1);
+    // Convert ml -> to
+    const out=ml/(VOLUME[toUnit]||1);
+
+    // If converting to/from grams, use density
+    if(toUnit==='Gram'||fromUnit==='Gram'){
+      const d=COOKING_DENSITY[ingredient];
+      if(!d)return out.toFixed(2);
+      if(fromUnit==='Cup (US)'&&toUnit==='Gram') return (n*d.cup).toFixed(1);
+      if(fromUnit==='Tablespoon'&&toUnit==='Gram') return (n*d.tbsp).toFixed(1);
+      if(fromUnit==='Teaspoon'&&toUnit==='Gram') return (n*d.tsp).toFixed(1);
+      if(fromUnit==='Gram'&&toUnit==='Cup (US)') return (n/d.cup).toFixed(2);
+      if(fromUnit==='Gram'&&toUnit==='Tablespoon') return (n/d.tbsp).toFixed(2);
+      if(fromUnit==='Gram'&&toUnit==='Teaspoon') return (n/d.tsp).toFixed(2);
+    }
+    return parseFloat(out.toPrecision(8)).toString();
+  },[val,fromUnit,toUnit,ingredient]);
+
+  const bg=dark?'rgba(30,41,59,0.6)':'rgba(255,255,255,0.9)';
+  const txt=dark?'#e2e8f0':'#1e293b';
+  const dim=dark?'rgba(255,255,255,0.4)':'rgba(0,0,0,0.4)';
+  const inputBg=dark?'rgba(15,23,42,0.6)':'rgba(241,245,249,0.9)';
+  const selBg=dark?'rgba(51,65,85,0.8)':'#f1f5f9';
+  const allUnits=[...volumeUnits,'Gram'];
+
+  return(
+    <div className="slide-up" style={{maxWidth:440,margin:'0 auto'}}>
+      <div style={{background:bg,borderRadius:20,padding:20,backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.06)'}}>
+        {/* Ingredient selector */}
+        <div style={{marginBottom:14}}>
+          <label style={{fontSize:10,fontWeight:700,color:dim,letterSpacing:1,display:'block',marginBottom:6}}>INGREDIENT</label>
+          <select value={ingredient} onChange={e=>setIngredient(e.target.value)}
+            style={{width:'100%',padding:'10px 30px 10px 12px',borderRadius:10,border:'1px solid rgba(255,255,255,0.08)',background:selBg,color:txt,fontSize:13,fontWeight:600,fontFamily:'Inter',cursor:'pointer'}}>
+            {Object.keys(COOKING_DENSITY).map(k=><option key={k} value={k}>{k}</option>)}
+          </select>
+        </div>
+
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:10,fontWeight:700,color:dim,letterSpacing:1,display:'block',marginBottom:6}}>FROM</label>
+          <select value={fromUnit} onChange={e=>{setFromUnit(e.target.value);playClick();}}
+            style={{width:'100%',padding:'10px 30px 10px 12px',borderRadius:10,border:'1px solid rgba(255,255,255,0.08)',background:selBg,color:txt,fontSize:13,fontWeight:600,fontFamily:'Inter',cursor:'pointer',marginBottom:8}}>
+            {allUnits.map(k=><option key={k} value={k}>{k}</option>)}
+          </select>
+          <input type="number" value={val} onChange={e=>setVal(e.target.value)} placeholder="Enter amount"
+            style={{width:'100%',padding:'14px 16px',borderRadius:12,border:'1px solid rgba(255,255,255,0.08)',background:inputBg,color:txt,fontSize:24,fontWeight:700,fontFamily:'JetBrains Mono',outline:'none'}}/>
+        </div>
+
+        <div style={{marginTop:8}}>
+          <label style={{fontSize:10,fontWeight:700,color:dim,letterSpacing:1,display:'block',marginBottom:6}}>TO</label>
+          <select value={toUnit} onChange={e=>{setToUnit(e.target.value);playClick();}}
+            style={{width:'100%',padding:'10px 30px 10px 12px',borderRadius:10,border:'1px solid rgba(255,255,255,0.08)',background:selBg,color:txt,fontSize:13,fontWeight:600,fontFamily:'Inter',cursor:'pointer',marginBottom:8}}>
+            {allUnits.map(k=><option key={k} value={k}>{k}</option>)}
+          </select>
+          <div className="mono" style={{padding:'14px 16px',borderRadius:12,
+            background:result?'rgba(59,130,246,0.08)':inputBg,
+            border:`1px solid ${result?'rgba(59,130,246,0.2)':'rgba(255,255,255,0.08)'}`,
+            color:result?'#3b82f6':dim,fontSize:24,fontWeight:700,minHeight:56}}>
+            {result||'—'}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ APP ═══ */
+function App(){
+  const [splash,setSplash]=useState(true);
+  const [dark,setDark]=useState(true);
+  const [tab,setTab]=useState('calc');
+  const [recent,setRecent]=useState(()=>{try{return JSON.parse(localStorage.getItem('recent_conv'))||[];}catch(e){return[];}});
+
+  const addToRecent=useCallback((item)=>{
+    setRecent(prev=>{const n=[item,...prev.filter(p=>p.from!==item.from||p.to!==item.to)].slice(0,10);localStorage.setItem('recent_conv',JSON.stringify(n));return n;});
+  },[]);
+
+  if(splash)return <Splash onDone={()=>setSplash(false)}/>;
+
+  return(
+    <div style={{minHeight:'100vh',background:dark?'#0f172a':'#f1f5f9',transition:'background 0.4s',paddingBottom:100}}>
+      {/* Header */}
+      <header style={{padding:'14px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',
+        borderBottom:`1px solid ${dark?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)'}`}}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <span style={{fontSize:22}}>⚡</span>
+          <div>
+            <h1 style={{fontSize:18,fontWeight:900,color:dark?'#fff':'#1e293b'}}>ConvertPro</h1>
+          </div>
+        </div>
+        <button onClick={()=>setDark(!dark)} style={{width:40,height:40,borderRadius:12,border:'none',cursor:'pointer',fontSize:18,
+          background:dark?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+          {dark?'☀️':'🌙'}
+        </button>
+      </header>
+
+      {/* Tabs */}
+      <div style={{display:'flex',gap:4,padding:'10px 12px',overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
+        {TABS.map(t=>(
+          <button key={t.key} onClick={()=>{setTab(t.key);playClick();}}
+            style={{flex:'0 0 auto',padding:'8px 14px',borderRadius:12,border:'none',cursor:'pointer',
+              background:tab===t.key?'linear-gradient(135deg,#3b82f6,#2563eb)':(dark?'rgba(255,255,255,0.04)':'rgba(0,0,0,0.04)'),
+              color:tab===t.key?'#fff':(dark?'rgba(255,255,255,0.5)':'#64748b'),
+              fontSize:11,fontWeight:600,fontFamily:'Inter',whiteSpace:'nowrap',transition:'all 0.2s',
+              display:'flex',alignItems:'center',gap:4}}>
+            <span style={{fontSize:14}}>{t.icon}</span>{t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div style={{padding:'12px 16px'}}>
+        {tab==='calc'&&<Calculator dark={dark}/>}
+        {tab==='currency'&&<CurrencyConverter dark={dark} addToRecent={addToRecent}/>}
+        {tab==='weight'&&<UnitConverter title="Weight" units={WEIGHT} dark={dark} addToRecent={addToRecent}/>}
+        {tab==='distance'&&<UnitConverter title="Distance" units={DISTANCE} dark={dark} addToRecent={addToRecent}/>}
+        {tab==='temp'&&<TempConverter dark={dark} addToRecent={addToRecent}/>}
+        {tab==='cooking'&&<CookingConverter dark={dark} addToRecent={addToRecent}/>}
+      </div>
+
+      {/* Recent conversions */}
+      {recent.length>0&&tab!=='calc'&&(
+        <div style={{padding:'0 16px',marginTop:8}}>
+          <div style={{background:dark?'rgba(30,41,59,0.5)':'rgba(255,255,255,0.8)',borderRadius:16,padding:14,
+            backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.06)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+              <span style={{fontSize:11,fontWeight:700,color:dark?'rgba(255,255,255,0.4)':'#64748b'}}>⏱ Recent</span>
+              <button onClick={()=>{setRecent([]);localStorage.removeItem('recent_conv');}} style={{fontSize:9,color:'#ef4444',background:'none',border:'none',cursor:'pointer',fontFamily:'Inter'}}>Clear</button>
+            </div>
+            {recent.slice(0,5).map((r,i)=>(
+              <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:'1px solid rgba(255,255,255,0.03)',fontSize:11}}>
+                <span style={{fontSize:8,fontWeight:700,color:'#3b82f6',background:'rgba(59,130,246,0.1)',padding:'2px 6px',borderRadius:4}}>{r.type}</span>
+                <span style={{color:dark?'rgba(255,255,255,0.5)':'#64748b'}}>{r.from}</span>
+                <span style={{color:dark?'rgba(255,255,255,0.2)':'#cbd5e1'}}>→</span>
+                <span className="mono" style={{fontWeight:600,color:dark?'#e2e8f0':'#1e293b'}}>{r.to}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
